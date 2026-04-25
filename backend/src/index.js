@@ -4,7 +4,7 @@ require('dotenv').config()
 const multer = require('multer')
 
 const { uploadTestFileToShelby, uploadBufferToShelby, downloadBlobFromShelby } = require('./shelbyTestUpload')
-const { putReceipt } = require('./receiptStore')
+const { putReceipt, getReceipt, listReceipts } = require('./receiptStore')
 const { newReceiptId, sha256Hex, signReceiptPayload } = require('./receiptCrypto')
 
 const app = express()
@@ -59,6 +59,7 @@ app.post('/ai-query', async (req, res) => {
 
     const blob = await downloadBlobFromShelby({ objectId })
     const dataSha256 = sha256Hex(blob.data)
+    const datasetName = blob.blobName.split('/').pop() || blob.blobName
 
     console.log('[TraceAI] AI Query access log', {
       objectId,
@@ -72,6 +73,7 @@ app.post('/ai-query', async (req, res) => {
     const receiptId = newReceiptId()
     const receiptPayload = {
       receiptId,
+      datasetName,
       objectId,
       accessedAt,
       accessedFrom,
@@ -102,6 +104,16 @@ app.post('/ai-query', async (req, res) => {
     console.error('[TraceAI] AI Query failed:', err)
     return res.status(500).json({ ok: false, error: 'AI query failed' })
   }
+})
+
+app.get('/receipts', (_req, res) => {
+  return res.json({ ok: true, receipts: listReceipts() })
+})
+
+app.get('/receipts/:receiptId', (req, res) => {
+  const receipt = getReceipt(req.params.receiptId)
+  if (!receipt) return res.status(404).json({ ok: false, error: 'Not found' })
+  return res.json({ ok: true, receipt })
 })
 
 const port = Number(process.env.PORT) || 3001
