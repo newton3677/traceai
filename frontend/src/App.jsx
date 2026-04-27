@@ -55,7 +55,7 @@ function ReceiptDetailPage() {
     if (!receipt) return
     setShareStatus('idle')
     try {
-      const shareUrl = `${window.location.origin}/receipt/${receipt.receiptId}`
+      const shareUrl = `${window.location.origin}/regulator/${receipt.receiptId}`
       await navigator.clipboard.writeText(shareUrl)
       setShareStatus('copied')
       setTimeout(() => setShareStatus('idle'), 3000)
@@ -904,12 +904,282 @@ function AppContent() {
   )
 }
 
+function RegulatorView() {
+  const { receiptId } = useParams()
+  const [status, setStatus] = useState('idle') // idle | loading | error | ready
+  const [error, setError] = useState(null)
+  const [receipt, setReceipt] = useState(null)
+  const [tamperStatus, setTamperStatus] = useState('idle') // idle | checking | verified | tampered | error
+  const [tamperResult, setTamperResult] = useState(null)
+
+  useEffect(() => {
+    if (!receiptId) return
+    let cancelled = false
+    async function loadReceipt() {
+      setStatus('loading')
+      setError(null)
+      try {
+        const res = await fetch(`${API_BASE_URL}/receipts/${receiptId}`)
+        const json = await res.json().catch(() => ({}))
+        if (!res.ok || !json?.ok) throw new Error(json?.error || 'Receipt not found')
+        if (cancelled) return
+        setReceipt(json.receipt)
+        setStatus('ready')
+      } catch (e) {
+        if (cancelled) return
+        setError(e?.message || 'Failed to load receipt')
+        setStatus('error')
+      }
+    }
+    loadReceipt()
+    return () => {
+      cancelled = true
+    }
+  }, [receiptId])
+
+  async function checkTamper() {
+    if (!receipt) return
+    setTamperStatus('checking')
+    setTamperResult(null)
+    try {
+      const res = await fetch(`${API_BASE_URL}/receipts/${receipt.receiptId}/tamper-check`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ simulateTamper: false }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || !json?.ok) throw new Error(json?.error || 'Tamper check failed')
+      setTamperResult(json)
+      setTamperStatus(json.isTampered ? 'tampered' : 'verified')
+    } catch (e) {
+      setTamperStatus('error')
+    }
+  }
+
+  // Auto-check tamper status when receipt loads
+  useEffect(() => {
+    if (status === 'ready' && receipt && tamperStatus === 'idle') {
+      checkTamper()
+    }
+  }, [status, receipt, tamperStatus])
+
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-lg text-slate-600">Loading compliance receipt...</div>
+        </div>
+      </div>
+    )
+  }
+
+  if (status === 'error') {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="max-w-md w-full mx-auto px-6">
+          <div className="rounded-xl bg-rose-50 p-6 text-sm text-rose-800 ring-1 ring-rose-200">
+            {error}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-white">
+      {/* Header */}
+      <div className="border-b border-slate-200">
+        <div className="max-w-4xl mx-auto px-6 py-8">
+          <div className="text-center">
+            <h1 className="text-2xl font-light text-slate-900 mb-2">
+              AI Data Usage Compliance Receipt
+            </h1>
+            <p className="text-sm text-slate-600">
+              Official cryptographic record for regulatory verification
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Verification Status */}
+      <div className="max-w-4xl mx-auto px-6 py-8">
+        <div className="text-center mb-8">
+          <div className={[
+            'inline-flex items-center gap-4 rounded-full px-8 py-4 text-lg font-bold ring-2',
+            tamperStatus === 'tampered' 
+              ? 'bg-rose-50 text-rose-800 ring-rose-200'
+              : tamperStatus === 'checking'
+              ? 'bg-amber-50 text-amber-800 ring-amber-200'
+              : tamperStatus === 'verified'
+              ? 'bg-emerald-50 text-emerald-800 ring-emerald-200'
+              : 'bg-slate-100 text-slate-600 ring-slate-300'
+          ]}>
+            <span className={[
+              'inline-flex h-10 w-10 items-center justify-center rounded-full text-white text-xl font-bold',
+              tamperStatus === 'tampered' 
+                ? 'bg-rose-600'
+                : tamperStatus === 'checking'
+                ? 'bg-amber-600'
+                : tamperStatus === 'verified'
+                ? 'bg-emerald-600'
+                : 'bg-slate-400'
+            ]}>
+              {tamperStatus === 'tampered' ? '✗' : 
+               tamperStatus === 'checking' ? '⟳' : 
+               tamperStatus === 'verified' ? '✓' : '?'}
+            </span>
+            {tamperStatus === 'tampered' ? 'TAMPERED - Invalid' : 
+             tamperStatus === 'checking' ? 'Verifying...' : 
+             tamperStatus === 'verified' ? 'VERIFIED' : 
+             'Unknown'}
+          </div>
+        </div>
+
+        {/* Receipt Details */}
+        <div className="grid gap-8">
+          {/* Basic Information */}
+          <div className="bg-slate-50 rounded-lg p-6 border border-slate-200">
+            <h2 className="text-lg font-medium text-slate-900 mb-4">Receipt Information</h2>
+            <div className="grid gap-3 text-sm">
+              <div className="flex justify-between">
+                <span className="text-slate-600">Receipt ID:</span>
+                <span className="font-mono text-slate-900">{receipt?.receiptId}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-600">Timestamp:</span>
+                <span className="font-mono text-slate-900">{receipt?.accessedAt}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-600">Dataset Name:</span>
+                <span className="font-mono text-slate-900">{receipt?.datasetName}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Access Details */}
+          <div className="bg-slate-50 rounded-lg p-6 border border-slate-200">
+            <h2 className="text-lg font-medium text-slate-900 mb-4">Access Details</h2>
+            <div className="grid gap-3 text-sm">
+              <div className="flex justify-between">
+                <span className="text-slate-600">Accessed By:</span>
+                <span className="font-mono text-slate-900">ai-model-v1</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-600">Access Source:</span>
+                <span className="font-mono text-slate-900">{receipt?.accessedFrom?.ip || 'Unknown'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-600">Permissions:</span>
+                <span className="font-mono text-slate-900">READ_ONLY</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Cryptographic Verification */}
+          <div className="bg-slate-50 rounded-lg p-6 border border-slate-200">
+            <h2 className="text-lg font-medium text-slate-900 mb-4">Cryptographic Verification</h2>
+            <div className="grid gap-3 text-sm">
+              <div>
+                <span className="text-slate-600 block mb-1">Data Hash (SHA-256):</span>
+                <span className="font-mono text-slate-900 break-all text-xs">{receipt?.data?.sha256}</span>
+              </div>
+              <div>
+                <span className="text-slate-600 block mb-1">Receipt Hash:</span>
+                <span className="font-mono text-slate-900 break-all text-xs">{receipt?.receiptHash}</span>
+              </div>
+              <div>
+                <span className="text-slate-600 block mb-1">Signature Algorithm:</span>
+                <span className="font-mono text-slate-900">{receipt?.signatureAlgorithm}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Blockchain Verification */}
+          <div className="bg-slate-50 rounded-lg p-6 border border-slate-200">
+            <h2 className="text-lg font-medium text-slate-900 mb-4">Blockchain Verification</h2>
+            <div className="grid gap-3 text-sm">
+              <div>
+                <span className="text-slate-600 block mb-1">Shelby Object ID:</span>
+                <span className="font-mono text-slate-900 break-all text-xs">{receipt?.objectId}</span>
+              </div>
+              <div>
+                <span className="text-slate-600 block mb-1">Aptos Transaction:</span>
+                <a
+                  href={`https://explorer.aptoslabs.com/txn/${receipt?.shelby?.txHash || receipt?.txHash}?network=shelbynet`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 transition-colors mt-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                  Verify on Aptos Explorer
+                </a>
+              </div>
+            </div>
+          </div>
+
+          {/* Tamper Detection */}
+          {tamperResult && (
+            <div className={[
+              'rounded-lg p-6 border-2',
+              tamperStatus === 'tampered' 
+                ? 'bg-rose-50 border-rose-200'
+                : tamperStatus === 'verified'
+                ? 'bg-emerald-50 border-emerald-200'
+                : 'bg-slate-50 border-slate-200'
+            ]}>
+              <h2 className="text-lg font-medium text-slate-900 mb-4">Integrity Verification</h2>
+              <div className="grid gap-3 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Verification Status:</span>
+                  <span className={[
+                    'font-bold',
+                    tamperStatus === 'tampered' ? 'text-rose-800' :
+                    tamperStatus === 'verified' ? 'text-emerald-800' : 'text-slate-800'
+                  ]}>
+                    {tamperStatus === 'tampered' ? '⚠️ HASH MISMATCH' : 
+                     tamperStatus === 'verified' ? '✅ HASH VERIFIED' : 
+                     'Checking...'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-600 block mb-1">Original Hash:</span>
+                  <span className="font-mono text-slate-900 break-all text-xs">{tamperResult.originalHash}</span>
+                </div>
+                <div>
+                  <span className="text-slate-600 block mb-1">Current Hash:</span>
+                  <span className="font-mono text-slate-900 break-all text-xs">{tamperResult.currentHash}</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div className="border-t border-slate-200 mt-12">
+        <div className="max-w-4xl mx-auto px-6 py-8">
+          <div className="text-center text-sm text-slate-600">
+            <div className="font-medium text-slate-900 mb-2">TraceAI</div>
+            <div>Cryptographic compliance receipts for AI data usage</div>
+            <div className="mt-2 text-xs text-slate-500">
+              Powered by Shelby storage on Aptos blockchain
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function App() {
   return (
     <Router>
       <Routes>
         <Route path="/" element={<AppContent />} />
         <Route path="/receipt/:receiptId" element={<ReceiptDetailPage />} />
+        <Route path="/regulator/:receiptId" element={<RegulatorView />} />
       </Routes>
     </Router>
   )
