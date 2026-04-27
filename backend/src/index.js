@@ -116,6 +116,45 @@ app.get('/receipts/:receiptId', (req, res) => {
   return res.json({ ok: true, receipt })
 })
 
+app.post('/receipts/:receiptId/tamper-check', async (req, res) => {
+  try {
+    const { simulateTamper = false } = req.body || {}
+    const receipt = getReceipt(req.params.receiptId)
+    if (!receipt) return res.status(404).json({ ok: false, error: 'Receipt not found' })
+
+    // Get the current data from Shelby
+    const blob = await downloadBlobFromShelby({ objectId: receipt.objectId })
+    const currentDataHash = sha256Hex(blob.data)
+    const originalDataHash = receipt.data.sha256
+
+    let isTampered = currentDataHash !== originalDataHash
+    
+    // If simulating tamper, flip the result for demo purposes
+    if (simulateTamper) {
+      isTampered = !isTampered
+    }
+
+    console.log('[TraceAI] Tamper check result:', {
+      receiptId: receipt.receiptId,
+      originalHash: originalDataHash,
+      currentHash: currentDataHash,
+      isTampered,
+      simulateTamper
+    })
+
+    return res.json({ 
+      ok: true, 
+      isTampered,
+      originalHash: originalDataHash,
+      currentHash: currentDataHash,
+      verified: !isTampered
+    })
+  } catch (err) {
+    console.error('[TraceAI] Tamper check failed:', err)
+    return res.status(500).json({ ok: false, error: 'Tamper check failed' })
+  }
+})
+
 const port = Number(process.env.PORT) || 3001
 app.listen(port, () => {
   console.log(`TraceAI API listening on http://localhost:${port}`)

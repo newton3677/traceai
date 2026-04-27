@@ -23,6 +23,8 @@ function ReceiptDetailPage() {
   const [error, setError] = useState(null)
   const [receipt, setReceipt] = useState(null)
   const [shareStatus, setShareStatus] = useState('idle') // idle | copied | error
+  const [tamperStatus, setTamperStatus] = useState('idle') // idle | checking | verified | tampered | error
+  const [tamperResult, setTamperResult] = useState(null)
 
   useEffect(() => {
     if (!receiptId) return
@@ -62,6 +64,33 @@ function ReceiptDetailPage() {
       setTimeout(() => setShareStatus('idle'), 3000)
     }
   }
+
+  async function checkTamper(simulateTamper = false) {
+    if (!receipt) return
+    setTamperStatus('checking')
+    setTamperResult(null)
+    try {
+      const res = await fetch(`${API_BASE_URL}/receipts/${receipt.receiptId}/tamper-check`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ simulateTamper }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || !json?.ok) throw new Error(json?.error || 'Tamper check failed')
+      setTamperResult(json)
+      setTamperStatus(json.isTampered ? 'tampered' : 'verified')
+    } catch (e) {
+      setTamperStatus('error')
+      setTimeout(() => setTamperStatus('idle'), 3000)
+    }
+  }
+
+  // Auto-check tamper status when receipt loads
+  useEffect(() => {
+    if (status === 'ready' && receipt && tamperStatus === 'idle') {
+      checkTamper(false)
+    }
+  }, [status, receipt, tamperStatus])
 
   if (status === 'loading') {
     return (
@@ -116,22 +145,54 @@ function ReceiptDetailPage() {
                 </p>
               </div>
               <div className="flex flex-col items-end gap-3">
-                <div className="inline-flex items-center gap-3 rounded-full bg-emerald-50 px-6 py-3 text-emerald-800 ring-2 ring-emerald-200">
-                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-emerald-600 text-white text-lg font-bold">
-                    ✓
+                <div className={[
+                  'inline-flex items-center gap-3 rounded-full px-6 py-3 ring-2',
+                  tamperStatus === 'tampered' 
+                    ? 'bg-rose-50 text-rose-800 ring-rose-200'
+                    : tamperStatus === 'checking'
+                    ? 'bg-amber-50 text-amber-800 ring-amber-200'
+                    : tamperStatus === 'verified'
+                    ? 'bg-emerald-50 text-emerald-800 ring-emerald-200'
+                    : 'bg-slate-100 text-slate-600 ring-slate-300'
+                ].join(' ')}>
+                  <span className={[
+                    'inline-flex h-8 w-8 items-center justify-center rounded-full text-white text-lg font-bold',
+                    tamperStatus === 'tampered' 
+                      ? 'bg-rose-600'
+                      : tamperStatus === 'checking'
+                      ? 'bg-amber-600'
+                      : tamperStatus === 'verified'
+                      ? 'bg-emerald-600'
+                      : 'bg-slate-400'
+                  ].join(' ')}>
+                    {tamperStatus === 'tampered' ? '✗' : 
+                     tamperStatus === 'checking' ? '⟳' : 
+                     tamperStatus === 'verified' ? '✓' : '?'}
                   </span>
                   <span className="text-lg font-bold">
-                    VERIFIED
+                    {tamperStatus === 'tampered' ? 'TAMPERED - Invalid' : 
+                     tamperStatus === 'checking' ? 'Checking...' : 
+                     tamperStatus === 'verified' ? 'VERIFIED' : 
+                     'Unknown'}
                   </span>
                 </div>
-                <button
-                  onClick={shareWithRegulator}
-                  className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 transition-colors"
-                >
-                  {shareStatus === 'copied' ? '✓ Link Copied!' : 
-                   shareStatus === 'error' ? '✗ Copy Failed' : 
-                   'Share with Regulator'}
-                </button>
+                <div className="flex flex-col gap-2">
+                  <button
+                    onClick={() => checkTamper(true)}
+                    disabled={tamperStatus === 'checking'}
+                    className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {tamperStatus === 'checking' ? 'Checking...' : 'Simulate Tamper'}
+                  </button>
+                  <button
+                    onClick={shareWithRegulator}
+                    className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 transition-colors"
+                  >
+                    {shareStatus === 'copied' ? '✓ Link Copied!' : 
+                     shareStatus === 'error' ? '✗ Copy Failed' : 
+                     'Share with Regulator'}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -272,6 +333,78 @@ function ReceiptDetailPage() {
                   </div>
                 </div>
               </div>
+
+              {/* Tamper Detection */}
+              {tamperResult && (
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900 mb-4">Tamper Detection Status</h2>
+                  <div className={[
+                    'rounded-lg p-6 border-2',
+                    tamperStatus === 'tampered' 
+                      ? 'bg-rose-50 border-rose-200'
+                      : tamperStatus === 'verified'
+                      ? 'bg-emerald-50 border-emerald-200'
+                      : 'bg-slate-50 border-slate-200'
+                  ]}>
+                    <div className="grid gap-4">
+                      <div>
+                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
+                          Verification Status
+                        </div>
+                        <div className={[
+                          'text-base font-bold',
+                          tamperStatus === 'tampered' ? 'text-rose-800' :
+                          tamperStatus === 'verified' ? 'text-emerald-800' : 'text-slate-800'
+                        ]}>
+                          {tamperStatus === 'tampered' ? '⚠️ DATA TAMPERED - HASH MISMATCH' : 
+                           tamperStatus === 'verified' ? '✅ DATA INTEGRITY VERIFIED' : 
+                           'Checking...'}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
+                          Original Hash (from receipt)
+                        </div>
+                        <div className="text-base font-mono text-slate-900 break-all">
+                          {tamperResult.originalHash}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
+                          Current Hash (live from Shelby)
+                        </div>
+                        <div className="text-base font-mono text-slate-900 break-all">
+                          {tamperResult.currentHash}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
+                          Hash Match
+                        </div>
+                        <div className={[
+                          'inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm font-medium',
+                          tamperStatus === 'tampered' 
+                            ? 'bg-rose-100 text-rose-800 ring-1 ring-rose-200'
+                            : tamperStatus === 'verified'
+                            ? 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200'
+                            : 'bg-slate-100 text-slate-600 ring-1 ring-slate-200'
+                        ]}>
+                          <span className={[
+                            'inline-flex h-4 w-4 items-center justify-center rounded-full text-white text-xs',
+                            tamperStatus === 'tampered' ? 'bg-rose-600' :
+                            tamperStatus === 'verified' ? 'bg-emerald-600' : 'bg-slate-400'
+                          ]}>
+                            {tamperStatus === 'tampered' ? '✗' : 
+                             tamperStatus === 'verified' ? '✓' : '?'}
+                          </span>
+                          {tamperStatus === 'tampered' ? 'MISMATCH' : 
+                           tamperStatus === 'verified' ? 'MATCH' : 'CHECKING'}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Footer */}
               <div className="border-t border-slate-200 pt-6">
