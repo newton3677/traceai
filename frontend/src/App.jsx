@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useParams } from 'react-router-dom'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001'
 
@@ -15,7 +16,284 @@ function VerifiedBadge() {
   )
 }
 
-function App() {
+function ReceiptDetailPage() {
+  const { receiptId } = useParams()
+  const navigate = useNavigate()
+  const [status, setStatus] = useState('idle') // idle | loading | error | ready
+  const [error, setError] = useState(null)
+  const [receipt, setReceipt] = useState(null)
+  const [shareStatus, setShareStatus] = useState('idle') // idle | copied | error
+
+  useEffect(() => {
+    if (!receiptId) return
+    let cancelled = false
+    async function loadReceipt() {
+      setStatus('loading')
+      setError(null)
+      try {
+        const res = await fetch(`${API_BASE_URL}/receipts/${receiptId}`)
+        const json = await res.json().catch(() => ({}))
+        if (!res.ok || !json?.ok) throw new Error(json?.error || 'Receipt not found')
+        if (cancelled) return
+        setReceipt(json.receipt)
+        setStatus('ready')
+      } catch (e) {
+        if (cancelled) return
+        setError(e?.message || 'Failed to load receipt')
+        setStatus('error')
+      }
+    }
+    loadReceipt()
+    return () => {
+      cancelled = true
+    }
+  }, [receiptId])
+
+  async function shareWithRegulator() {
+    if (!receipt) return
+    setShareStatus('idle')
+    try {
+      const shareUrl = `${window.location.origin}/receipt/${receipt.receiptId}`
+      await navigator.clipboard.writeText(shareUrl)
+      setShareStatus('copied')
+      setTimeout(() => setShareStatus('idle'), 3000)
+    } catch (e) {
+      setShareStatus('error')
+      setTimeout(() => setShareStatus('idle'), 3000)
+    }
+  }
+
+  if (status === 'loading') {
+    return (
+      <main className="min-h-screen px-6 py-14 bg-slate-900">
+        <div className="mx-auto w-full max-w-4xl">
+          <div className="text-center text-white">Loading receipt...</div>
+        </div>
+      </main>
+    )
+  }
+
+  if (status === 'error') {
+    return (
+      <main className="min-h-screen px-6 py-14 bg-slate-900">
+        <div className="mx-auto w-full max-w-4xl">
+          <div className="rounded-xl bg-rose-50 p-6 text-sm text-rose-800 ring-1 ring-rose-200">
+            {error}
+          </div>
+          <button
+            onClick={() => navigate('/audit')}
+            className="mt-4 rounded-lg bg-white px-4 py-2 text-sm font-medium text-slate-900"
+          >
+            Back to Audit Dashboard
+          </button>
+        </div>
+      </main>
+    )
+  }
+
+  return (
+    <main className="min-h-screen px-6 py-14 bg-slate-900">
+      <div className="mx-auto w-full max-w-4xl">
+        <div className="mb-8">
+          <button
+            onClick={() => navigate('/audit')}
+            className="text-white/80 hover:text-white text-sm"
+          >
+            ← Back to Audit Dashboard
+          </button>
+        </div>
+
+        <div className="rounded-2xl bg-white shadow-2xl border border-slate-200">
+          {/* Header */}
+          <div className="border-b border-slate-200 px-8 py-6">
+            <div className="flex items-start justify-between">
+              <div>
+                <h1 className="text-2xl font-bold text-slate-900">
+                  Data Usage Compliance Receipt
+                </h1>
+                <p className="mt-2 text-sm text-slate-600">
+                  Official cryptographic record of AI data access
+                </p>
+              </div>
+              <div className="flex flex-col items-end gap-3">
+                <div className="inline-flex items-center gap-3 rounded-full bg-emerald-50 px-6 py-3 text-emerald-800 ring-2 ring-emerald-200">
+                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-emerald-600 text-white text-lg font-bold">
+                    ✓
+                  </span>
+                  <span className="text-lg font-bold">
+                    VERIFIED
+                  </span>
+                </div>
+                <button
+                  onClick={shareWithRegulator}
+                  className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 transition-colors"
+                >
+                  {shareStatus === 'copied' ? '✓ Link Copied!' : 
+                   shareStatus === 'error' ? '✗ Copy Failed' : 
+                   'Share with Regulator'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Receipt Content */}
+          <div className="px-8 py-8">
+            <div className="grid gap-8">
+              {/* Dataset Information */}
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900 mb-4">Dataset Information</h2>
+                <div className="bg-slate-50 rounded-lg p-6 border border-slate-200">
+                  <div className="grid gap-4">
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
+                        Dataset Name
+                      </div>
+                      <div className="text-base font-mono text-slate-900">
+                        {receipt?.datasetName || 'Unknown Dataset'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
+                        Data Hash (SHA-256)
+                      </div>
+                      <div className="text-base font-mono text-slate-900 break-all">
+                        {receipt?.data?.sha256 || 'N/A'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Access Information */}
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900 mb-4">Access Information</h2>
+                <div className="bg-slate-50 rounded-lg p-6 border border-slate-200">
+                  <div className="grid gap-4">
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
+                        Accessed By
+                      </div>
+                      <div className="text-base font-mono text-slate-900">
+                        ai-model-v1
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
+                        Timestamp
+                      </div>
+                      <div className="text-base font-mono text-slate-900">
+                        {receipt?.accessedAt || 'N/A'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
+                        Access Source
+                      </div>
+                      <div className="text-base font-mono text-slate-900">
+                        {receipt?.accessedFrom?.ip || 'Unknown IP'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Permissions & Consent */}
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900 mb-4">Permissions & Consent</h2>
+                <div className="bg-slate-50 rounded-lg p-6 border border-slate-200">
+                  <div className="grid gap-4">
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
+                        Permissions
+                      </div>
+                      <div className="text-base font-mono text-slate-900">
+                        READ_ONLY
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
+                        Consent Status
+                      </div>
+                      <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-emerald-800 ring-1 ring-emerald-200">
+                        <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-emerald-600 text-white text-xs">
+                          ✓
+                        </span>
+                        <span className="text-sm font-medium">
+                          VERIFIED
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Blockchain Verification */}
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900 mb-4">Blockchain Verification</h2>
+                <div className="bg-slate-50 rounded-lg p-6 border border-slate-200">
+                  <div className="grid gap-4">
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
+                        Aptos Transaction Hash
+                      </div>
+                      <a
+                        href={`https://explorer.aptoslabs.com/txn/${receipt?.shelby?.txHash || receipt?.txHash}?network=shelbynet`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-base font-mono text-blue-600 hover:text-blue-800 break-all underline"
+                      >
+                        {receipt?.shelby?.txHash || receipt?.txHash || 'N/A'}
+                      </a>
+                    </div>
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
+                        Shelby Object ID
+                      </div>
+                      <div className="text-base font-mono text-slate-900 break-all">
+                        {receipt?.objectId || 'N/A'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
+                        Receipt Hash
+                      </div>
+                      <div className="text-base font-mono text-slate-900 break-all">
+                        {receipt?.receiptHash || 'N/A'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
+                        Signature Algorithm
+                      </div>
+                      <div className="text-base font-mono text-slate-900">
+                        {receipt?.signatureAlgorithm || 'N/A'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="border-t border-slate-200 pt-6">
+                <div className="flex items-center justify-between text-sm text-slate-600">
+                  <div>
+                    Receipt ID: <span className="font-mono">{receipt?.receiptId}</span>
+                  </div>
+                  <div>
+                    Generated by TraceAI on Shelby + Aptos
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  )
+}
+
+function AppContent() {
+  const navigate = useNavigate()
   const [view, setView] = useState('upload') // upload | audit
   const inputRef = useRef(null)
   const [dragActive, setDragActive] = useState(false)
@@ -381,13 +659,8 @@ function App() {
                     <button
                       key={r.receiptId}
                       type="button"
-                      onClick={() => setSelectedReceipt(r)}
-                      className={[
-                        'w-full rounded-xl border p-4 text-left transition',
-                        selectedReceipt?.receiptId === r.receiptId
-                          ? 'border-slate-900 bg-slate-50'
-                          : 'border-slate-200 hover:border-slate-300',
-                      ].join(' ')}
+                      onClick={() => navigate(`/receipt/${r.receiptId}`)}
+                      className="w-full rounded-xl border border-slate-200 p-4 text-left transition hover:border-slate-300 hover:bg-slate-50"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
@@ -492,9 +765,20 @@ function App() {
               </div>
             ) : null}
           </section>
-        )}
+        ) : null}
       </div>
     </main>
+  )
+}
+
+function App() {
+  return (
+    <Router>
+      <Routes>
+        <Route path="/" element={<AppContent />} />
+        <Route path="/receipt/:receiptId" element={<ReceiptDetailPage />} />
+      </Routes>
+    </Router>
   )
 }
 
