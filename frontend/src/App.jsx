@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useParams } from 'react-router-dom'
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001'
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://traceai-backend-k1se.onrender.com'
 
 // ─── Helper Functions ───────────────────────────────────────────────────────
 function formatTimestamp(iso) {

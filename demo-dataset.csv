@@ -1,0 +1,6 @@
+applicant_id,name,age,income,credit_score,loan_amount,employment_status,decision,ai_model,date
+APP001,James Okafor,34,85000,620,25000,employed,rejected,loan-ai-v2,2026-04-25
+APP002,Sarah Chen,28,120000,780,50000,employed,approved,loan-ai-v2,2026-04-25
+APP003,Mike Adeyemi,45,65000,590,15000,self-employed,rejected,loan-ai-v2,2026-04-25
+APP004,Amaka Obi,31,95000,710,30000,employed,approved,loan-ai-v2,2026-04-25
+APP005,David Park,52,200000,820,100000,employed,approved,loan-ai-v2,2026-04-25

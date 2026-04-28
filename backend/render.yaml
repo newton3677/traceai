@@ -1,0 +1,35 @@
+services:
+  # Type of service that will run your web service
+  - type: web
+
+    # Name of your service
+    name: traceai-backend
+
+    # Environment variables
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+
+    # Build and start commands
+    buildCommand: "npm install"
+    startCommand: "npm start"
+
+    # Directory that contains your package.json
+    rootDir: .
+
+    # Health check path
+    healthCheckPath: /health
+
+    # Auto-deploy configuration
+    autoDeploy: yes
+
+    # Instance size (free tier)
+    instanceType: free
+
+    # Region (closest to you)
+    region: oregon
+
+# Version of Render configuration
+version: "1"
