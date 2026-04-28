@@ -5,7 +5,7 @@
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-traceai--sigma.vercel.app-blue?style=for-the-badge)](https://traceai-sigma.vercel.app)
 [![Built on Shelby](https://img.shields.io/badge/Built%20on-Shelby%20by%20Aptos%20Labs-green?style=for-the-badge)](https://shelby.xyz)
 
----
+
 
 ## What is TraceAI?
 
@@ -15,9 +15,9 @@ When AI makes a decision that affects someone — a loan rejection, an insurance
 
 Every time an AI touches data, TraceAI generates a cryptographic receipt and anchors it permanently on the Aptos blockchain. When a regulator asks what your AI did, you answer in 3 seconds.
 
----
 
-## 🌐 Live Demo
+
+## Live Demo
 
 **[https://traceai-sigma.vercel.app](https://traceai-sigma.vercel.app)**
 
@@ -26,11 +26,11 @@ Try this flow:
 2. Run AI Query → receipt generates instantly
 3. View the cryptographic receipt
 4. Share with Regulator → one-click read-only link
-5. Simulate Tamper → watch the receipt turn RED 🔴
+5. Simulate Tamper → watch the receipt turn RED 
 
----
 
-## ✨ Features
+
+##  Features
 
 - **Dataset Upload** — stored on Shelby with blockchain anchoring
 - **AI Query Logging** — every data access is recorded
@@ -39,18 +39,18 @@ Try this flow:
 - **Regulator Share Link** — no login needed for the recipient
 - **Audit Dashboard** — full timeline of all AI data events
 
----
 
-## 🛠️ Built With
+
+##  Built With
 
 - **Frontend** — React + TailwindCSS (Vercel)
 - **Backend** — Node.js + Express (Render)
 - **Storage** — Shelby Protocol by Aptos Labs
 - **Blockchain** — Aptos (immutable on-chain proof)
 
----
 
-## 🚀 Run Locally
+
+##  Run Locally
 
 ```bash
 # Clone
@@ -77,13 +77,13 @@ SHELBY_RPC_BASE_URL=https://api.shelbynet.shelby.xyz/shelby
 RECEIPT_HMAC_SECRET=your_secret
 ```
 
----
 
-## 🏆 Built for the Shelby Hackathon
+
+##  Built for the Shelby Hackathon
 
 TraceAI is the compliance layer built on top of Shelby — making AI trustworthy, auditable, and provable for any industry.
 
----
+
 
 <p align="center">
   <strong>TraceAI — Making AI Trustworthy, One Receipt at a Time.</strong>
