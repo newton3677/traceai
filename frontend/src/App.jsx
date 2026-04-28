@@ -1,1188 +1,947 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useParams } from 'react-router-dom'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001'
 
-function VerifiedBadge() {
-  return (
-    <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-emerald-800 ring-1 ring-emerald-200">
-      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-600 text-white">
-        ✓
-      </span>
-      <span className="text-sm font-medium">
-        Stored on Shelby. Anchored on Aptos blockchain.
-      </span>
-    </div>
-  )
+// ─── Helper Functions ───────────────────────────────────────────────────────
+function formatTimestamp(iso) {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleString()
 }
 
-function ReceiptDetailPage() {
-  const { receiptId } = useParams()
-  const navigate = useNavigate()
-  const [status, setStatus] = useState('idle') // idle | loading | error | ready
-  const [error, setError] = useState(null)
-  const [receipt, setReceipt] = useState(null)
-  const [shareStatus, setShareStatus] = useState('idle') // idle | copied | error
-  const [tamperStatus, setTamperStatus] = useState('idle') // idle | checking | verified | tampered | error
-  const [tamperResult, setTamperResult] = useState(null)
-
-  useEffect(() => {
-    if (!receiptId) return
-    let cancelled = false
-    async function loadReceipt() {
-      setStatus('loading')
-      setError(null)
-      try {
-        const res = await fetch(`${API_BASE_URL}/receipts/${receiptId}`)
-        const json = await res.json().catch(() => ({}))
-        if (!res.ok || !json?.ok) throw new Error(json?.error || 'Receipt not found')
-        if (cancelled) return
-        setReceipt(json.receipt)
-        setStatus('ready')
-      } catch (e) {
-        if (cancelled) return
-        setError(e?.message || 'Failed to load receipt')
-        setStatus('error')
-      }
-    }
-    loadReceipt()
-    return () => {
-      cancelled = true
-    }
-  }, [receiptId])
-
-  async function shareWithRegulator() {
-    if (!receipt) return
-    setShareStatus('idle')
-    try {
-      const shareUrl = `${window.location.origin}/regulator/${receipt.receiptId}`
-      await navigator.clipboard.writeText(shareUrl)
-      setShareStatus('copied')
-      setTimeout(() => setShareStatus('idle'), 3000)
-    } catch (e) {
-      setShareStatus('error')
-      setTimeout(() => setShareStatus('idle'), 3000)
-    }
-  }
-
-  async function checkTamper(simulateTamper = false) {
-    if (!receipt) return
-    setTamperStatus('checking')
-    setTamperResult(null)
-    try {
-      const res = await fetch(`${API_BASE_URL}/receipts/${receipt.receiptId}/tamper-check`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ simulateTamper }),
-      })
-      const json = await res.json().catch(() => ({}))
-      if (!res.ok || !json?.ok) throw new Error(json?.error || 'Tamper check failed')
-      setTamperResult(json)
-      setTamperStatus(json.isTampered ? 'tampered' : 'verified')
-    } catch (e) {
-      setTamperStatus('error')
-      setTimeout(() => setTamperStatus('idle'), 3000)
-    }
-  }
-
-  // Auto-check tamper status when receipt loads
-  useEffect(() => {
-    if (status === 'ready' && receipt && tamperStatus === 'idle') {
-      checkTamper(false)
-    }
-  }, [status, receipt, tamperStatus])
-
-  if (status === 'loading') {
-    return (
-      <main className="min-h-screen px-6 py-14 bg-slate-900">
-        <div className="mx-auto w-full max-w-4xl">
-          <div className="text-center text-white">Loading receipt...</div>
-        </div>
-      </main>
-    )
-  }
-
-  if (status === 'error') {
-    return (
-      <main className="min-h-screen px-6 py-14 bg-slate-900">
-        <div className="mx-auto w-full max-w-4xl">
-          <div className="rounded-xl bg-rose-50 p-6 text-sm text-rose-800 ring-1 ring-rose-200">
-            {error}
-          </div>
-          <button
-            onClick={() => navigate('/audit')}
-            className="mt-4 rounded-lg bg-white px-4 py-2 text-sm font-medium text-slate-900"
-          >
-            Back to Audit Dashboard
-          </button>
-        </div>
-      </main>
-    )
-  }
-
-  return (
-    <main className="min-h-screen px-6 py-14 bg-slate-900">
-      <div className="mx-auto w-full max-w-4xl">
-        <div className="mb-8">
-          <button
-            onClick={() => navigate('/audit')}
-            className="text-white/80 hover:text-white text-sm"
-          >
-            ← Back to Audit Dashboard
-          </button>
-        </div>
-
-        <div className="rounded-2xl bg-white shadow-2xl border border-slate-200">
-          {/* Header */}
-          <div className="border-b border-slate-200 px-8 py-6">
-            <div className="flex items-start justify-between">
-              <div>
-                <h1 className="text-2xl font-bold text-slate-900">
-                  Data Usage Compliance Receipt
-                </h1>
-                <p className="mt-2 text-sm text-slate-600">
-                  Official cryptographic record of AI data access
-                </p>
-              </div>
-              <div className="flex flex-col items-end gap-3">
-                <div className={[
-                  'inline-flex items-center gap-3 rounded-full px-6 py-3 ring-2',
-                  tamperStatus === 'tampered' 
-                    ? 'bg-rose-50 text-rose-800 ring-rose-200'
-                    : tamperStatus === 'checking'
-                    ? 'bg-amber-50 text-amber-800 ring-amber-200'
-                    : tamperStatus === 'verified'
-                    ? 'bg-emerald-50 text-emerald-800 ring-emerald-200'
-                    : 'bg-slate-100 text-slate-600 ring-slate-300'
-                ].join(' ')}>
-                  <span className={[
-                    'inline-flex h-8 w-8 items-center justify-center rounded-full text-white text-lg font-bold',
-                    tamperStatus === 'tampered' 
-                      ? 'bg-rose-600'
-                      : tamperStatus === 'checking'
-                      ? 'bg-amber-600'
-                      : tamperStatus === 'verified'
-                      ? 'bg-emerald-600'
-                      : 'bg-slate-400'
-                  ].join(' ')}>
-                    {tamperStatus === 'tampered' ? '✗' : 
-                     tamperStatus === 'checking' ? '⟳' : 
-                     tamperStatus === 'verified' ? '✓' : '?'}
-                  </span>
-                  <span className="text-lg font-bold">
-                    {tamperStatus === 'tampered' ? 'TAMPERED - Invalid' : 
-                     tamperStatus === 'checking' ? 'Checking...' : 
-                     tamperStatus === 'verified' ? 'VERIFIED' : 
-                     'Unknown'}
-                  </span>
-                </div>
-                <div className="flex flex-col gap-2">
-                  <button
-                    onClick={() => checkTamper(true)}
-                    disabled={tamperStatus === 'checking'}
-                    className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {tamperStatus === 'checking' ? 'Checking...' : 'Simulate Tamper'}
-                  </button>
-                  <button
-                    onClick={shareWithRegulator}
-                    className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 transition-colors"
-                  >
-                    {shareStatus === 'copied' ? '✓ Link Copied!' : 
-                     shareStatus === 'error' ? '✗ Copy Failed' : 
-                     'Share with Regulator'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Receipt Content */}
-          <div className="px-8 py-8">
-            <div className="grid gap-8">
-              {/* Dataset Information */}
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900 mb-4">Dataset Information</h2>
-                <div className="bg-slate-50 rounded-lg p-6 border border-slate-200">
-                  <div className="grid gap-4">
-                    <div>
-                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
-                        Dataset Name
-                      </div>
-                      <div className="text-base font-mono text-slate-900">
-                        {receipt?.datasetName || 'Unknown Dataset'}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
-                        Data Hash (SHA-256)
-                      </div>
-                      <div className="text-base font-mono text-slate-900 break-all">
-                        {receipt?.data?.sha256 || 'N/A'}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Access Information */}
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900 mb-4">Access Information</h2>
-                <div className="bg-slate-50 rounded-lg p-6 border border-slate-200">
-                  <div className="grid gap-4">
-                    <div>
-                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
-                        Accessed By
-                      </div>
-                      <div className="text-base font-mono text-slate-900">
-                        ai-model-v1
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
-                        Timestamp
-                      </div>
-                      <div className="text-base font-mono text-slate-900">
-                        {receipt?.accessedAt || 'N/A'}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
-                        Access Source
-                      </div>
-                      <div className="text-base font-mono text-slate-900">
-                        {receipt?.accessedFrom?.ip || 'Unknown IP'}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Permissions & Consent */}
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900 mb-4">Permissions & Consent</h2>
-                <div className="bg-slate-50 rounded-lg p-6 border border-slate-200">
-                  <div className="grid gap-4">
-                    <div>
-                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
-                        Permissions
-                      </div>
-                      <div className="text-base font-mono text-slate-900">
-                        READ_ONLY
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
-                        Consent Status
-                      </div>
-                      <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-emerald-800 ring-1 ring-emerald-200">
-                        <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-emerald-600 text-white text-xs">
-                          ✓
-                        </span>
-                        <span className="text-sm font-medium">
-                          VERIFIED
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Blockchain Verification */}
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900 mb-4">Blockchain Verification</h2>
-                <div className="bg-slate-50 rounded-lg p-6 border border-slate-200">
-                  <div className="grid gap-4">
-                    <div>
-                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
-                        Aptos Transaction Hash
-                      </div>
-                      <a
-                        href={`https://explorer.aptoslabs.com/txn/${receipt?.shelby?.txHash || receipt?.txHash}?network=shelbynet`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-base font-mono text-blue-600 hover:text-blue-800 break-all underline"
-                      >
-                        {receipt?.shelby?.txHash || receipt?.txHash || 'N/A'}
-                      </a>
-                    </div>
-                    <div>
-                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
-                        Shelby Object ID
-                      </div>
-                      <div className="text-base font-mono text-slate-900 break-all">
-                        {receipt?.objectId || 'N/A'}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
-                        Receipt Hash
-                      </div>
-                      <div className="text-base font-mono text-slate-900 break-all">
-                        {receipt?.receiptHash || 'N/A'}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
-                        Signature Algorithm
-                      </div>
-                      <div className="text-base font-mono text-slate-900">
-                        {receipt?.signatureAlgorithm || 'N/A'}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Tamper Detection */}
-              {tamperResult && (
-                <div>
-                  <h2 className="text-lg font-semibold text-slate-900 mb-4">Tamper Detection Status</h2>
-                  <div className={[
-                    'rounded-lg p-6 border-2',
-                    tamperStatus === 'tampered' 
-                      ? 'bg-rose-50 border-rose-200'
-                      : tamperStatus === 'verified'
-                      ? 'bg-emerald-50 border-emerald-200'
-                      : 'bg-slate-50 border-slate-200'
-                  ]}>
-                    <div className="grid gap-4">
-                      <div>
-                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
-                          Verification Status
-                        </div>
-                        <div className={[
-                          'text-base font-bold',
-                          tamperStatus === 'tampered' ? 'text-rose-800' :
-                          tamperStatus === 'verified' ? 'text-emerald-800' : 'text-slate-800'
-                        ]}>
-                          {tamperStatus === 'tampered' ? '⚠️ DATA TAMPERED - HASH MISMATCH' : 
-                           tamperStatus === 'verified' ? '✅ DATA INTEGRITY VERIFIED' : 
-                           'Checking...'}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
-                          Original Hash (from receipt)
-                        </div>
-                        <div className="text-base font-mono text-slate-900 break-all">
-                          {tamperResult.originalHash}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
-                          Current Hash (live from Shelby)
-                        </div>
-                        <div className="text-base font-mono text-slate-900 break-all">
-                          {tamperResult.currentHash}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
-                          Hash Match
-                        </div>
-                        <div className={[
-                          'inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm font-medium',
-                          tamperStatus === 'tampered' 
-                            ? 'bg-rose-100 text-rose-800 ring-1 ring-rose-200'
-                            : tamperStatus === 'verified'
-                            ? 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200'
-                            : 'bg-slate-100 text-slate-600 ring-1 ring-slate-200'
-                        ]}>
-                          <span className={[
-                            'inline-flex h-4 w-4 items-center justify-center rounded-full text-white text-xs',
-                            tamperStatus === 'tampered' ? 'bg-rose-600' :
-                            tamperStatus === 'verified' ? 'bg-emerald-600' : 'bg-slate-400'
-                          ]}>
-                            {tamperStatus === 'tampered' ? '✗' : 
-                             tamperStatus === 'verified' ? '✓' : '?'}
-                          </span>
-                          {tamperStatus === 'tampered' ? 'MISMATCH' : 
-                           tamperStatus === 'verified' ? 'MATCH' : 'CHECKING'}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Footer */}
-              <div className="border-t border-slate-200 pt-6">
-                <div className="flex items-center justify-between text-sm text-slate-600">
-                  <div>
-                    Receipt ID: <span className="font-mono">{receipt?.receiptId}</span>
-                  </div>
-                  <div>
-                    Generated by TraceAI on Shelby + Aptos
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </main>
-  )
+function shortHash(str, length = 12) {
+  if (!str) return '—'
+  return str.length > length * 2 + 3 ? str.slice(0, length) + '…' + str.slice(-length) : str
 }
 
-function AppContent() {
+// ─── Upload Page ─────────────────────────────────────────────────────────────
+function UploadPage() {
   const navigate = useNavigate()
-  const [view, setView] = useState('upload') // upload | audit
-  const inputRef = useRef(null)
   const [dragActive, setDragActive] = useState(false)
   const [file, setFile] = useState(null)
-  const [status, setStatus] = useState('idle') // idle | uploading | success | error
-  const [result, setResult] = useState(null)
-  const [error, setError] = useState(null)
-  const [queryStatus, setQueryStatus] = useState('idle') // idle | running | success | error
-  const [receipt, setReceipt] = useState(null)
+  const [uploading, setUploading] = useState(false)
+  const [uploadResult, setUploadResult] = useState(null)
+  const [uploadError, setUploadError] = useState(null)
+  const [querying, setQuerying] = useState(false)
+  const [queryResult, setQueryResult] = useState(null)
   const [queryError, setQueryError] = useState(null)
-  const [auditStatus, setAuditStatus] = useState('idle') // idle | loading | error | ready
-  const [auditError, setAuditError] = useState(null)
-  const [receipts, setReceipts] = useState([])
-  const [selectedReceipt, setSelectedReceipt] = useState(null)
+  const fileInputRef = useRef(null)
 
-  useEffect(() => {
-    if (view !== 'audit') return
-    let cancelled = false
-    async function load() {
-      setAuditStatus('loading')
-      setAuditError(null)
-      try {
-        const res = await fetch(`${API_BASE_URL}/receipts`)
-        const json = await res.json().catch(() => ({}))
-        if (!res.ok || !json?.ok) throw new Error(json?.error || 'Failed to load receipts')
-        if (cancelled) return
-        setReceipts(Array.isArray(json.receipts) ? json.receipts : [])
-        setSelectedReceipt(null)
-        setAuditStatus('ready')
-      } catch (e) {
-        if (cancelled) return
-        setAuditError(e?.message || 'Failed to load receipts')
-        setAuditStatus('error')
+  const handleDrop = useCallback((e) => {
+    e.preventDefault()
+    setDragActive(false)
+    const dropped = e.dataTransfer.files[0]
+    if (dropped) setFile(dropped)
+  }, [])
+
+  const handleFileChange = useCallback((e) => {
+    const selected = e.target.files[0]
+    if (selected) setFile(selected)
+  }, [])
+
+  const handleUpload = useCallback(async () => {
+    if (!file) return
+    setUploading(true)
+    setUploadError(null)
+    setUploadResult(null)
+    setQueryResult(null)
+
+    const formData = new FormData()
+    formData.append('file', file)
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/upload`, {
+        method: 'POST',
+        body: formData
+      })
+      const data = await response.json()
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || 'Upload failed')
       }
+      setUploadResult({
+        objectId: data.objectId,
+        txHash: data.txHash
+      })
+    } catch (error) {
+      setUploadError(error.message)
+    } finally {
+      setUploading(false)
     }
-    load()
-    return () => {
-      cancelled = true
-    }
-  }, [view])
-
-  const hint = useMemo(() => {
-    if (!file) return 'Drag and drop a file here, or click to browse.'
-    return `${file.name} • ${(file.size / 1024).toFixed(1)} KB`
   }, [file])
 
-  async function uploadSelectedFile(selectedFile) {
-    setFile(selectedFile)
-    setStatus('uploading')
-    setResult(null)
-    setError(null)
-    setReceipt(null)
-    setQueryStatus('idle')
+  const handleQuery = useCallback(async () => {
+    if (!uploadResult?.objectId) return
+    setQuerying(true)
     setQueryError(null)
-
-    const form = new FormData()
-    form.append('file', selectedFile)
+    setQueryResult(null)
 
     try {
-      const res = await fetch(`${API_BASE_URL}/upload`, {
-        method: 'POST',
-        body: form,
-      })
-      const json = await res.json().catch(() => ({}))
-      if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || 'Upload failed')
-      }
-      setResult({ objectId: json.objectId, txHash: json.txHash })
-      setStatus('success')
-    } catch (e) {
-      setError(e?.message || 'Upload failed')
-      setStatus('error')
-    }
-  }
-
-  async function runAiQuery() {
-    if (!result?.objectId) return
-    setQueryStatus('running')
-    setQueryError(null)
-    setReceipt(null)
-
-    try {
-      const res = await fetch(`${API_BASE_URL}/ai-query`, {
+      const response = await fetch(`${API_BASE_URL}/ai-query`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          objectId: result.objectId,
-          permissions: ['read:blob', 'simulate:ai-query'],
-        }),
+          objectId: uploadResult.objectId,
+          permissions: ['read:blob', 'simulate:ai-query']
+        })
       })
-      const json = await res.json().catch(() => ({}))
-      if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || 'AI query failed')
+      const data = await response.json()
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || 'AI query failed')
       }
-      setReceipt(json.receipt)
-      setQueryStatus('success')
-    } catch (e) {
-      setQueryError(e?.message || 'AI query failed')
-      setQueryStatus('error')
+      setQueryResult(data.receipt)
+    } catch (error) {
+      setQueryError(error.message)
+    } finally {
+      setQuerying(false)
     }
-  }
+  }, [uploadResult])
 
-  function onDrop(e) {
-    e.preventDefault()
-    setDragActive(false)
-    const f = e.dataTransfer.files?.[0]
-    if (f) uploadSelectedFile(f)
-  }
-
-  function onBrowsePick(e) {
-    const f = e.target.files?.[0]
-    if (f) uploadSelectedFile(f)
-  }
+  const hint = file ? `${file.name} • ${(file.size / 1024).toFixed(1)} KB` : 'Drag and drop a file here, or click to browse.'
 
   return (
-    <main className="min-h-screen px-6 py-14">
-      <div className="mx-auto w-full max-w-3xl">
-        <header className="mb-8">
-          <h1 className="text-3xl font-semibold tracking-tight text-white">
-            TraceAI
-          </h1>
-          <p className="mt-2 text-sm text-white/80">
-            Compliance receipts for AI data usage on Shelby + Aptos.
-          </p>
+    <>
+      <Navbar />
+      <div className="page">
+        <h1 className="page-title">Upload Dataset</h1>
+        <p className="page-sub">Every upload is anchored on Aptos via Shelby — tamper-proof from day one.</p>
 
-          <div className="mt-5 flex gap-2">
-            <button
-              type="button"
-              onClick={() => setView('upload')}
-              className={[
-                'rounded-lg px-3 py-2 text-sm font-medium ring-1',
-                view === 'upload'
-                  ? 'bg-white text-slate-900 ring-white'
-                  : 'bg-transparent text-white ring-white/40 hover:ring-white/70',
-              ].join(' ')}
-            >
-              Upload
-            </button>
-            <button
-              type="button"
-              onClick={() => setView('audit')}
-              className={[
-                'rounded-lg px-3 py-2 text-sm font-medium ring-1',
-                view === 'audit'
-                  ? 'bg-white text-slate-900 ring-white'
-                  : 'bg-transparent text-white ring-white/40 hover:ring-white/70',
-              ].join(' ')}
-            >
-              Audit Dashboard
+        {/* Upload Zone */}
+        <div
+          className={`upload-zone${dragActive ? ' drag-over' : ''}`}
+          onDragOver={(e) => { e.preventDefault(); setDragActive(true) }}
+          onDragLeave={() => setDragActive(false)}
+          onDrop={handleDrop}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          <input
+            ref={fileInputRef}
+            type="file"
+            style={{ display: 'none' }}
+            onChange={handleFileChange}
+          />
+          <div className="upload-icon">🗂️</div>
+          {file ? (
+            <>
+              <h3>{file.name}</h3>
+              <p>{(file.size / 1024).toFixed(1)} KB</p>
+            </>
+          ) : (
+            <>
+              <h3>Drop your dataset here</h3>
+              <p>CSV, JSON, TXT, PDF — or click to browse</p>
+            </>
+          )}
+        </div>
+
+        {file && !uploadResult && (
+          <div style={{ marginTop: '1rem' }}>
+            <button className="btn btn-primary" onClick={handleUpload} disabled={uploading}>
+              {uploading ? <><div className="spinner" /> Uploading to Shelby…</> : '⬆️ Upload to Shelby'}
             </button>
           </div>
-        </header>
+        )}
 
-        {view === 'upload' ? (
-          <section className="rounded-2xl bg-white p-6 shadow-lg">
-          <button
-            type="button"
-            onClick={() => inputRef.current?.click()}
-            onDragEnter={(e) => {
-              e.preventDefault()
-              setDragActive(true)
-            }}
-            onDragOver={(e) => {
-              e.preventDefault()
-              setDragActive(true)
-            }}
-            onDragLeave={(e) => {
-              e.preventDefault()
-              setDragActive(false)
-            }}
-            onDrop={onDrop}
-            disabled={status === 'uploading'}
-            className={[
-              'w-full rounded-2xl border-2 border-dashed p-10 text-left transition',
-              dragActive ? 'border-slate-900 bg-slate-50' : 'border-slate-200',
-              status === 'uploading' ? 'opacity-60 cursor-not-allowed' : '',
-            ].join(' ')}
-          >
-            <div className="flex items-start justify-between gap-6">
-              <div>
-                <div className="text-base font-semibold text-slate-900">
-                  Drag & drop
-                </div>
-                <div className="mt-1 text-sm text-slate-600">{hint}</div>
-                <div className="mt-4 text-xs text-slate-500">
-                  Uploads go to Shelby on shelbynet.
-                </div>
-              </div>
+        {uploadError && <div className="alert alert-error" style={{ marginTop: '1rem' }}>⚠️ {uploadError}</div>}
 
-              <div className="shrink-0">
-                <span className="inline-flex items-center rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white">
-                  {status === 'uploading' ? 'Uploading…' : 'Browse'}
-                </span>
-              </div>
+        {/* Upload Result */}
+        {uploadResult && (
+          <div className="card" style={{ marginTop: '1.5rem' }}>
+            <div className="section-header">
+              <div className="section-title">✅ Upload Confirmed</div>
+              <span className="badge badge-verified">● VERIFIED</span>
             </div>
-          </button>
-
-          <input
-            ref={inputRef}
-            type="file"
-            className="hidden"
-            onChange={onBrowsePick}
-            disabled={status === 'uploading'}
-          />
-
-          {status === 'error' ? (
-            <div className="mt-5 rounded-xl bg-rose-50 p-4 text-sm text-rose-800 ring-1 ring-rose-200">
-              {error}
+            <div className="field-row">
+              <div className="field-label">Object ID (Shelby)</div>
+              <div className="mono-field">{uploadResult.objectId}</div>
             </div>
-          ) : null}
-
-          {status === 'success' && result ? (
-            <div className="mt-6 rounded-2xl bg-slate-50 p-5 ring-1 ring-slate-200">
-              <VerifiedBadge />
-
-              <div className="mt-4 space-y-3 text-sm">
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-                    Shelby Object ID
-                  </div>
-                  <div className="mt-1 break-all rounded-lg bg-white p-3 font-mono text-xs text-slate-900 ring-1 ring-slate-200">
-                    {result.objectId}
-                  </div>
-                </div>
-
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-                    Aptos Transaction Hash
-                  </div>
-                  <div className="mt-1 break-all rounded-lg bg-white p-3 font-mono text-xs text-slate-900 ring-1 ring-slate-200">
-                    {result.txHash}
-                  </div>
+            {uploadResult.txHash && (
+              <div className="field-row">
+                <div className="field-label">Aptos Tx Hash</div>
+                <div className="mono-field">
+                  <a
+                    href={`https://explorer.aptoslabs.com/txn/${uploadResult.txHash}?network=shelbynet`}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ color: 'var(--accent2)' }}
+                  >
+                    {uploadResult.txHash}
+                  </a>
                 </div>
               </div>
-
-              <div className="mt-6 flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  onClick={runAiQuery}
-                  disabled={queryStatus === 'running'}
-                  className={[
-                    'inline-flex items-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white',
-                    queryStatus === 'running' ? 'opacity-60 cursor-not-allowed' : '',
-                  ].join(' ')}
-                >
-                  {queryStatus === 'running' ? 'Running AI Query…' : 'Run AI Query'}
-                </button>
-
-                {queryStatus === 'error' ? (
-                  <span className="text-sm text-rose-700">{queryError}</span>
-                ) : null}
-              </div>
-
-              {queryStatus === 'success' && receipt ? (
-                <div className="mt-5 rounded-2xl bg-white p-5 ring-1 ring-slate-200">
-                  <div className="text-sm font-semibold text-slate-900">
-                    Cryptographic Receipt
-                  </div>
-                  <div className="mt-3 grid gap-3 text-xs">
-                    <div>
-                      <div className="font-semibold uppercase tracking-wide text-slate-500">
-                        Receipt ID
-                      </div>
-                      <div className="mt-1 font-mono break-all text-slate-900">
-                        {receipt.receiptId}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="font-semibold uppercase tracking-wide text-slate-500">
-                        Access
-                      </div>
-                      <div className="mt-1 text-slate-900">
-                        <span className="font-mono">{receipt.accessedAt}</span>
-                      </div>
-                      <div className="mt-1 text-slate-700">
-                        <span className="font-semibold">From:</span>{' '}
-                        <span className="font-mono">
-                          {receipt.accessedFrom?.ip || 'unknown'}
-                        </span>
-                      </div>
-                    </div>
-                    <div>
-                      <div className="font-semibold uppercase tracking-wide text-slate-500">
-                        Permissions
-                      </div>
-                      <div className="mt-1 font-mono break-all text-slate-900">
-                        {(receipt.permissions || []).join(', ')}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="font-semibold uppercase tracking-wide text-slate-500">
-                        Data digest (sha256)
-                      </div>
-                      <div className="mt-1 font-mono break-all text-slate-900">
-                        {receipt.data?.sha256}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="font-semibold uppercase tracking-wide text-slate-500">
-                        Receipt hash
-                      </div>
-                      <div className="mt-1 font-mono break-all text-slate-900">
-                        {receipt.receiptHash}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="font-semibold uppercase tracking-wide text-slate-500">
-                        Signature
-                      </div>
-                      <div className="mt-1 font-mono break-all text-slate-900">
-                        {receipt.signature}
-                      </div>
-                      <div className="mt-1 text-slate-500">
-                        {receipt.signatureAlgorithm}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-          </section>
-        ) : (
-          <section className="rounded-2xl bg-white p-6 shadow-lg">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <div className="text-base font-semibold text-slate-900">
-                  AI Query Receipt Timeline
-                </div>
-                <div className="mt-1 text-sm text-slate-600">
-                  Click a row to view full receipt details.
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setView('audit')}
-                className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white"
-              >
-                Refresh
+            )}
+            <div style={{ marginTop: '1.25rem', display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <button className="btn btn-primary" onClick={handleQuery} disabled={querying}>
+                {querying ? <><div className="spinner" /> Running…</> : '🤖 Run AI Query'}
+              </button>
+              <button className="btn btn-secondary" onClick={() => navigate('/dashboard')}>
+                View Dashboard →
               </button>
             </div>
+          </div>
+        )}
 
-            {auditStatus === 'loading' ? (
-              <div className="mt-6 text-sm text-slate-600">Loading receipts…</div>
-            ) : null}
-
-            {auditStatus === 'error' ? (
-              <div className="mt-6 rounded-xl bg-rose-50 p-4 text-sm text-rose-800 ring-1 ring-rose-200">
-                {auditError}
-              </div>
-            ) : null}
-
-            {auditStatus === 'ready' ? (
-              <div className="mt-6 grid gap-6 md:grid-cols-2">
-                <div className="space-y-2">
-                  {receipts.length === 0 ? (
-                    <div className="text-sm text-slate-600">
-                      No receipts yet. Run an AI Query to generate one.
-                    </div>
-                  ) : null}
-
-                  {receipts.map((r) => (
-                    <button
-                      key={r.receiptId}
-                      type="button"
-                      onClick={() => navigate(`/receipt/${r.receiptId}`)}
-                      className="w-full rounded-xl border border-slate-200 p-4 text-left transition hover:border-slate-300 hover:bg-slate-50"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="truncate text-sm font-semibold text-slate-900">
-                            {r.datasetName || 'dataset'}
-                          </div>
-                          <div className="mt-1 truncate font-mono text-xs text-slate-600">
-                            {r.receiptId}
-                          </div>
-                          <div className="mt-1 text-xs text-slate-500">
-                            {r.accessedAt}
-                          </div>
-                        </div>
-                        <span className="shrink-0 inline-flex items-center rounded-full bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-800 ring-1 ring-emerald-200">
-                          VERIFIED
-                        </span>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-                  {selectedReceipt ? (
-                    <>
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="text-sm font-semibold text-slate-900">
-                          Receipt Details
-                        </div>
-                        <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-800 ring-1 ring-emerald-200">
-                          VERIFIED
-                        </span>
-                      </div>
-
-                      <div className="mt-4 grid gap-3 text-xs">
-                        <div>
-                          <div className="font-semibold uppercase tracking-wide text-slate-500">
-                            Dataset
-                          </div>
-                          <div className="mt-1 text-slate-900">
-                            {selectedReceipt.datasetName}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="font-semibold uppercase tracking-wide text-slate-500">
-                            Timestamp
-                          </div>
-                          <div className="mt-1 font-mono text-slate-900">
-                            {selectedReceipt.accessedAt}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="font-semibold uppercase tracking-wide text-slate-500">
-                            Receipt ID
-                          </div>
-                          <div className="mt-1 font-mono break-all text-slate-900">
-                            {selectedReceipt.receiptId}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="font-semibold uppercase tracking-wide text-slate-500">
-                            Object ID
-                          </div>
-                          <div className="mt-1 font-mono break-all text-slate-900">
-                            {selectedReceipt.objectId}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="font-semibold uppercase tracking-wide text-slate-500">
-                            Data sha256
-                          </div>
-                          <div className="mt-1 font-mono break-all text-slate-900">
-                            {selectedReceipt.data?.sha256}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="font-semibold uppercase tracking-wide text-slate-500">
-                            Receipt hash
-                          </div>
-                          <div className="mt-1 font-mono break-all text-slate-900">
-                            {selectedReceipt.receiptHash}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="font-semibold uppercase tracking-wide text-slate-500">
-                            Signature
-                          </div>
-                          <div className="mt-1 font-mono break-all text-slate-900">
-                            {selectedReceipt.signature}
-                          </div>
-                          <div className="mt-1 text-slate-500">
-                            {selectedReceipt.signatureAlgorithm}
-                          </div>
-                        </div>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="text-sm text-slate-600">
-                      Select a receipt to view details.
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : null}
-          </section>
-        ) : null}
+        {/* Query Result */}
+        {queryResult && (
+          <div className="card" style={{ marginTop: '1rem' }}>
+            <div className="section-header">
+              <div className="section-title">🧾 Cryptographic Receipt Generated</div>
+              <span className="badge badge-verified">● VERIFIED</span>
+            </div>
+            <div className="field-row">
+              <div className="field-label">Receipt ID</div>
+              <div className="mono-field">{queryResult.receiptId}</div>
+            </div>
+            <div className="field-row">
+              <div className="field-label">SHA-256 Hash</div>
+              <div className="mono-field">{queryResult.data?.sha256}</div>
+            </div>
+            <div style={{ marginTop: '1.25rem', display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <button
+                className="btn btn-primary"
+                onClick={() => navigate(`/receipt/${queryResult.receiptId}`)}
+              >
+                View Receipt →
+              </button>
+              <button className="btn btn-secondary" onClick={() => navigate('/dashboard')}>
+                Dashboard
+              </button>
+            </div>
+          </div>
+        )}
       </div>
-    </main>
+    </>
   )
 }
 
-function RegulatorView() {
-  const { receiptId } = useParams()
-  const [status, setStatus] = useState('idle') // idle | loading | error | ready
+// ─── Dashboard Page ─────────────────────────────────────────────────────────
+function DashboardPage() {
+  const [receipts, setReceipts] = useState([])
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [receipt, setReceipt] = useState(null)
-  const [tamperStatus, setTamperStatus] = useState('idle') // idle | checking | verified | tampered | error
-  const [tamperResult, setTamperResult] = useState(null)
+  const navigate = useNavigate()
 
   useEffect(() => {
-    if (!receiptId) return
-    let cancelled = false
-    async function loadReceipt() {
-      setStatus('loading')
-      setError(null)
+    async function loadReceipts() {
       try {
-        const res = await fetch(`${API_BASE_URL}/receipts/${receiptId}`)
-        const json = await res.json().catch(() => ({}))
-        if (!res.ok || !json?.ok) throw new Error(json?.error || 'Receipt not found')
-        if (cancelled) return
-        setReceipt(json.receipt)
-        setStatus('ready')
-      } catch (e) {
-        if (cancelled) return
-        setError(e?.message || 'Failed to load receipt')
-        setStatus('error')
+        const response = await fetch(`${API_BASE_URL}/receipts`)
+        const data = await response.json()
+        setReceipts(Array.isArray(data.receipts) ? data.receipts : [])
+      } catch (err) {
+        setError('Could not load receipts from backend.')
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadReceipts()
+  }, [])
+
+  const verified = receipts.filter(r => !r.tampered).length
+  const tampered = receipts.filter(r => r.tampered).length
+
+  return (
+    <>
+      <Navbar />
+      <div className="page">
+        <h1 className="page-title">Audit Dashboard</h1>
+        <p className="page-sub">Every AI data access — tracked, verified, regulator-ready.</p>
+
+        {/* Stats Row */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '2rem' }}>
+          {[
+            { label: 'Total Receipts', value: receipts.length, color: 'var(--accent)' },
+            { label: 'Verified', value: verified, color: 'var(--success)' },
+            { label: 'Tampered', value: tampered, color: 'var(--danger)' },
+          ].map((stat) => (
+            <div key={stat.label} className="card" style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '2rem', fontWeight: 700, color: stat.color }}>{stat.value}</div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: '4px' }}>{stat.label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Receipt List */}
+        <div className="section-header">
+          <div className="section-title">Receipt Timeline</div>
+          <Link to="/" className="btn btn-secondary" style={{ fontSize: '0.8rem', padding: '6px 14px' }}>
+            + New Upload
+          </Link>
+        </div>
+
+        {loading && (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '3rem' }}>
+            <div className="spinner" style={{ width: 32, height: 32 }} />
+          </div>
+        )}
+
+        {error && <div className="alert alert-error">{error}</div>}
+
+        {!loading && receipts.length === 0 && (
+          <div className="empty-state">
+            <div className="icon">📭</div>
+            <p>No receipts yet. Upload a dataset and run an AI query to get started.</p>
+          </div>
+        )}
+
+        {receipts.map((receipt) => (
+          <div
+            key={receipt.receiptId}
+            className={`receipt-item${receipt.tampered ? ' tampered' : ''}`}
+            onClick={() => navigate(`/receipt/${receipt.receiptId}`)}
+          >
+            <div className={`receipt-dot${receipt.tampered ? ' tampered' : ''}`} />
+            <div className="receipt-item-body">
+              <div className="receipt-item-title">{receipt.datasetName || 'Unknown dataset'}</div>
+              <div className="receipt-item-meta">
+                {formatTimestamp(receipt.accessedAt)} • {shortHash(receipt.data?.sha256)}
+              </div>
+            </div>
+            <span className={`badge ${receipt.tampered ? 'badge-tampered' : 'badge-verified'}`}>
+              {receipt.tampered ? '● TAMPERED' : '● VERIFIED'}
+            </span>
+          </div>
+        ))}
+      </div>
+    </>
+  )
+}
+
+// ─── Receipt Detail Page ─────────────────────────────────────────────────────
+function ReceiptPage() {
+  const { id } = useParams()
+  const navigate = useNavigate()
+  const [receipt, setReceipt] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [tampering, setTampering] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    async function loadReceipt() {
+      try {
+        const response = await fetch(`${API_BASE_URL}/receipts/${id}`)
+        const data = await response.json()
+        if (!response.ok || !data.ok) throw new Error(data.error || 'Receipt not found')
+        setReceipt(data.receipt)
+      } catch (err) {
+        setError(err.message)
+      } finally {
+        setLoading(false)
       }
     }
     loadReceipt()
-    return () => {
-      cancelled = true
-    }
-  }, [receiptId])
+  }, [id])
 
-  async function checkTamper() {
-    if (!receipt) return
-    setTamperStatus('checking')
-    setTamperResult(null)
+  const handleTamper = async () => {
+    setTampering(true)
     try {
-      const res = await fetch(`${API_BASE_URL}/receipts/${receipt.receiptId}/tamper-check`, {
+      const response = await fetch(`${API_BASE_URL}/receipts/${id}/tamper-check`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ simulateTamper: false }),
+        body: JSON.stringify({ simulateTamper: true })
       })
-      const json = await res.json().catch(() => ({}))
-      if (!res.ok || !json?.ok) throw new Error(json?.error || 'Tamper check failed')
-      setTamperResult(json)
-      setTamperStatus(json.isTampered ? 'tampered' : 'verified')
-    } catch (e) {
-      setTamperStatus('error')
+      const data = await response.json()
+      if (!response.ok || !data.ok) throw new Error(data.error || 'Tamper failed')
+      setReceipt(prev => ({ ...prev, tampered: true, tamperResult: data }))
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setTampering(false)
     }
   }
 
-  // Auto-check tamper status when receipt loads
-  useEffect(() => {
-    if (status === 'ready' && receipt && tamperStatus === 'idle') {
-      checkTamper()
-    }
-  }, [status, receipt, tamperStatus])
-
-  if (status === 'loading') {
-    return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-lg text-slate-600">Loading compliance receipt...</div>
-        </div>
-      </div>
-    )
+  const handleCopyLink = () => {
+    const url = `${window.location.origin}/regulator/${id}`
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
   }
 
-  if (status === 'error') {
-    return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
-        <div className="max-w-md w-full mx-auto px-6">
-          <div className="rounded-xl bg-rose-50 p-6 text-sm text-rose-800 ring-1 ring-rose-200">
-            {error}
-          </div>
-        </div>
+  if (loading) return (
+    <>
+      <Navbar />
+      <div className="page" style={{ display: 'flex', justifyContent: 'center', paddingTop: '5rem' }}>
+        <div className="spinner" style={{ width: 40, height: 40 }} />
       </div>
-    )
-  }
+    </>
+  )
+
+  if (error) return (
+    <>
+      <Navbar />
+      <div className="page">
+        <div className="alert alert-error">{error}</div>
+        <button className="btn btn-secondary" onClick={() => navigate('/dashboard')}>← Back</button>
+      </div>
+    </>
+  )
+
+  const isTampered = receipt?.tampered
 
   return (
-    <div className="min-h-screen bg-white">
-      {/* Header */}
-      <div className="border-b border-slate-200">
-        <div className="max-w-4xl mx-auto px-6 py-8">
-          <div className="text-center">
-            <h1 className="text-2xl font-light text-slate-900 mb-2">
-              AI Data Usage Compliance Receipt
-            </h1>
-            <p className="text-sm text-slate-600">
-              Official cryptographic record for regulatory verification
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Verification Status */}
-      <div className="max-w-4xl mx-auto px-6 py-8">
-        <div className="text-center mb-8">
-          <div className={[
-            'inline-flex items-center gap-4 rounded-full px-8 py-4 text-lg font-bold ring-2',
-            tamperStatus === 'tampered' 
-              ? 'bg-rose-50 text-rose-800 ring-rose-200'
-              : tamperStatus === 'checking'
-              ? 'bg-amber-50 text-amber-800 ring-amber-200'
-              : tamperStatus === 'verified'
-              ? 'bg-emerald-50 text-emerald-800 ring-emerald-200'
-              : 'bg-slate-100 text-slate-600 ring-slate-300'
-          ]}>
-            <span className={[
-              'inline-flex h-10 w-10 items-center justify-center rounded-full text-white text-xl font-bold',
-              tamperStatus === 'tampered' 
-                ? 'bg-rose-600'
-                : tamperStatus === 'checking'
-                ? 'bg-amber-600'
-                : tamperStatus === 'verified'
-                ? 'bg-emerald-600'
-                : 'bg-slate-400'
-            ]}>
-              {tamperStatus === 'tampered' ? '✗' : 
-               tamperStatus === 'checking' ? '⟳' : 
-               tamperStatus === 'verified' ? '✓' : '?'}
-            </span>
-            {tamperStatus === 'tampered' ? 'TAMPERED - Invalid' : 
-             tamperStatus === 'checking' ? 'Verifying...' : 
-             tamperStatus === 'verified' ? 'VERIFIED' : 
-             'Unknown'}
-          </div>
+    <>
+      <Navbar />
+      <div className="page">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+          <button className="btn btn-secondary" style={{ padding: '6px 12px' }} onClick={() => navigate('/dashboard')}>
+            ← Dashboard
+          </button>
+          <h1 className="page-title" style={{ margin: 0 }}>Receipt Detail</h1>
+          <span className={`badge ${isTampered ? 'badge-tampered' : 'badge-verified'}`} style={{ fontSize: '0.9rem', padding: '6px 14px' }}>
+            {isTampered ? '🔴 TAMPERED' : '🟢 VERIFIED'}
+          </span>
         </div>
 
-        {/* Receipt Details */}
-        <div className="grid gap-8">
-          {/* Basic Information */}
-          <div className="bg-slate-50 rounded-lg p-6 border border-slate-200">
-            <h2 className="text-lg font-medium text-slate-900 mb-4">Receipt Information</h2>
-            <div className="grid gap-3 text-sm">
-              <div className="flex justify-between">
-                <span className="text-slate-600">Receipt ID:</span>
-                <span className="font-mono text-slate-900">{receipt?.receiptId}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-600">Timestamp:</span>
-                <span className="font-mono text-slate-900">{receipt?.accessedAt}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-600">Dataset Name:</span>
-                <span className="font-mono text-slate-900">{receipt?.datasetName}</span>
-              </div>
-            </div>
+        {isTampered && (
+          <div className="alert alert-error">
+            ⚠️ Data integrity violation detected. The hash no longer matches the stored record on Shelby/Aptos.
           </div>
+        )}
 
-          {/* Access Details */}
-          <div className="bg-slate-50 rounded-lg p-6 border border-slate-200">
-            <h2 className="text-lg font-medium text-slate-900 mb-4">Access Details</h2>
-            <div className="grid gap-3 text-sm">
-              <div className="flex justify-between">
-                <span className="text-slate-600">Accessed By:</span>
-                <span className="font-mono text-slate-900">ai-model-v1</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-600">Access Source:</span>
-                <span className="font-mono text-slate-900">{receipt?.accessedFrom?.ip || 'Unknown'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-600">Permissions:</span>
-                <span className="font-mono text-slate-900">READ_ONLY</span>
-              </div>
-            </div>
+        {/* Main receipt card */}
+        <div className="card">
+          <div className="field-row">
+            <div className="field-label">Receipt ID</div>
+            <div className="mono-field">{receipt.receiptId}</div>
           </div>
-
-          {/* Cryptographic Verification */}
-          <div className="bg-slate-50 rounded-lg p-6 border border-slate-200">
-            <h2 className="text-lg font-medium text-slate-900 mb-4">Cryptographic Verification</h2>
-            <div className="grid gap-3 text-sm">
-              <div>
-                <span className="text-slate-600 block mb-1">Data Hash (SHA-256):</span>
-                <span className="font-mono text-slate-900 break-all text-xs">{receipt?.data?.sha256}</span>
-              </div>
-              <div>
-                <span className="text-slate-600 block mb-1">Receipt Hash:</span>
-                <span className="font-mono text-slate-900 break-all text-xs">{receipt?.receiptHash}</span>
-              </div>
-              <div>
-                <span className="text-slate-600 block mb-1">Signature Algorithm:</span>
-                <span className="font-mono text-slate-900">{receipt?.signatureAlgorithm}</span>
-              </div>
-            </div>
+          <div className="field-row">
+            <div className="field-label">Object ID (Shelby)</div>
+            <div className="mono-field">{receipt.objectId || '—'}</div>
           </div>
-
-          {/* Blockchain Verification */}
-          <div className="bg-slate-50 rounded-lg p-6 border border-slate-200">
-            <h2 className="text-lg font-medium text-slate-900 mb-4">Blockchain Verification</h2>
-            <div className="grid gap-3 text-sm">
-              <div>
-                <span className="text-slate-600 block mb-1">Shelby Object ID:</span>
-                <span className="font-mono text-slate-900 break-all text-xs">{receipt?.objectId}</span>
-              </div>
-              <div>
-                <span className="text-slate-600 block mb-1">Aptos Transaction:</span>
+          <div className="field-row">
+            <div className="field-label">SHA-256 Hash</div>
+            <div className="mono-field">{receipt.data?.sha256 || '—'}</div>
+          </div>
+          {receipt.signature && (
+            <div className="field-row">
+              <div className="field-label">HMAC Signature</div>
+              <div className="mono-field">{receipt.signature}</div>
+            </div>
+          )}
+          {receipt.shelby?.txHash && (
+            <div className="field-row">
+              <div className="field-label">Aptos Tx Hash</div>
+              <div className="mono-field">
                 <a
-                  href={`https://explorer.aptoslabs.com/txn/${receipt?.shelby?.txHash || receipt?.txHash}?network=shelbynet`}
+                  href={`https://explorer.aptoslabs.com/txn/${receipt.shelby.txHash}?network=shelbynet`}
                   target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 transition-colors mt-2"
+                  rel="noreferrer"
+                  style={{ color: 'var(--accent2)' }}
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                  </svg>
-                  Verify on Aptos Explorer
+                  {receipt.shelby.txHash}
                 </a>
               </div>
             </div>
+          )}
+          <div className="field-row">
+            <div className="field-label">Timestamp</div>
+            <div className="mono-field">{formatTimestamp(receipt.accessedAt)}</div>
           </div>
+          <div className="field-row">
+            <div className="field-label">Accessed By</div>
+            <div className="mono-field">ai-model-v1</div>
+          </div>
+          <div className="field-row">
+            <div className="field-label">Permissions</div>
+            <div className="mono-field">READ_ONLY</div>
+          </div>
+        </div>
 
-          {/* Tamper Detection */}
-          {tamperResult && (
-            <div className={[
-              'rounded-lg p-6 border-2',
-              tamperStatus === 'tampered' 
-                ? 'bg-rose-50 border-rose-200'
-                : tamperStatus === 'verified'
-                ? 'bg-emerald-50 border-emerald-200'
-                : 'bg-slate-50 border-slate-200'
-            ]}>
-              <h2 className="text-lg font-medium text-slate-900 mb-4">Integrity Verification</h2>
-              <div className="grid gap-3 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-slate-600">Verification Status:</span>
-                  <span className={[
-                    'font-bold',
-                    tamperStatus === 'tampered' ? 'text-rose-800' :
-                    tamperStatus === 'verified' ? 'text-emerald-800' : 'text-slate-800'
-                  ]}>
-                    {tamperStatus === 'tampered' ? '⚠️ HASH MISMATCH' : 
-                     tamperStatus === 'verified' ? '✅ HASH VERIFIED' : 
-                     'Checking...'}
-                  </span>
+        {/* Action Buttons */}
+        <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem', flexWrap: 'wrap' }}>
+          <button className="btn btn-primary" onClick={handleCopyLink}>
+            {copied ? '✅ Link Copied!' : '🔗 Share with Regulator'}
+          </button>
+          <button
+            className="btn btn-secondary"
+            onClick={() => navigate(`/regulator/${id}`)}
+          >
+            👁 Open Regulator View
+          </button>
+          {!isTampered && (
+            <button className="btn btn-danger" onClick={handleTamper} disabled={tampering}>
+              {tampering ? <><div className="spinner" /> Tampering…</> : '💀 Simulate Tamper'}
+            </button>
+          )}
+        </div>
+
+        {isTampered && receipt.tamperResult && (
+          <div className="card" style={{ marginTop: '1.5rem', border: '1px solid rgba(255,76,106,0.4)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <span style={{ fontSize: '1.5rem' }}>🔴</span>
+              <div>
+                <div style={{ fontWeight: 700, color: 'var(--danger)' }}>Tamper Detected</div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: '2px' }}>
+                  The hash has been altered. This receipt is no longer trustworthy.
                 </div>
-                <div>
-                  <span className="text-slate-600 block mb-1">Original Hash:</span>
-                  <span className="font-mono text-slate-900 break-all text-xs">{tamperResult.originalHash}</span>
-                </div>
-                <div>
-                  <span className="text-slate-600 block mb-1">Current Hash:</span>
-                  <span className="font-mono text-slate-900 break-all text-xs">{tamperResult.currentHash}</span>
+                <div style={{ marginTop: '0.5rem' }}>
+                  <div className="field-label">Original Hash:</div>
+                  <div className="mono-field">{receipt.tamperResult.originalHash}</div>
+                  <div className="field-label">Current Hash:</div>
+                  <div className="mono-field">{receipt.tamperResult.currentHash}</div>
                 </div>
               </div>
             </div>
-          )}
+          </div>
+        )}
+      </div>
+    </>
+  )
+}
+
+// ─── Regulator View Page ─────────────────────────────────────────────────────
+function RegulatorPage() {
+  const { id } = useParams()
+  const [receipt, setReceipt] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    async function loadReceipt() {
+      try {
+        const response = await fetch(`${API_BASE_URL}/receipts/${id}`)
+        const data = await response.json()
+        if (!response.ok || !data.ok) throw new Error(data.error || 'Receipt not found')
+        setReceipt(data.receipt)
+      } catch (err) {
+        setError(err.message)
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadReceipt()
+  }, [id])
+
+  const isTampered = receipt?.tampered
+
+  return (
+    <div style={{ minHeight: '100vh' }}>
+      {/* Minimal regulator header */}
+      <div className="navbar">
+        <div className="navbar-brand">
+          <div className="logo-icon">T</div>
+          Trace<span>AI</span>
+          <span style={{ fontSize: '0.7rem', color: 'var(--muted)', marginLeft: '8px', fontWeight: 400 }}>
+            Regulator View
+          </span>
         </div>
+        <span className="badge badge-pending">READ-ONLY</span>
       </div>
 
-      {/* Footer */}
-      <div className="border-t border-slate-200 mt-12">
-        <div className="max-w-4xl mx-auto px-6 py-8">
-          <div className="text-center text-sm text-slate-600">
-            <div className="font-medium text-slate-900 mb-2">TraceAI</div>
-            <div>Cryptographic compliance receipts for AI data usage</div>
-            <div className="mt-2 text-xs text-slate-500">
-              Powered by Shelby storage on Aptos blockchain
-            </div>
+      <div className="page">
+        <div className="regulator-banner">
+          <div className="shield">🛡️</div>
+          <div>
+            <h2>Official AI Data Provenance Receipt</h2>
+            <p>This is a cryptographically verified, tamper-evident record generated by TraceAI and anchored on the Aptos blockchain via Shelby. It cannot be altered without detection.</p>
           </div>
         </div>
+
+        {loading && (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '3rem' }}>
+            <div className="spinner" style={{ width: 40, height: 40 }} />
+          </div>
+        )}
+
+        {error && <div className="alert alert-error">{error}</div>}
+
+        {receipt && (
+          <>
+            {/* Status Banner */}
+            <div className="card" style={{
+              marginBottom: '1.5rem',
+              border: `2px solid ${isTampered ? 'rgba(255,76,106,0.5)' : 'rgba(0,255,178,0.3)'}`,
+              background: isTampered ? 'rgba(255,76,106,0.06)' : 'rgba(0,255,178,0.06)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <span style={{ fontSize: '2.5rem' }}>{isTampered ? '🔴' : '🟢'}</span>
+                <div>
+                  <div style={{
+                    fontSize: '1.25rem',
+                    fontWeight: 800,
+                    color: isTampered ? 'var(--danger)' : 'var(--success)'
+                  }}>
+                    {isTampered ? 'DATA INTEGRITY VIOLATION' : 'DATA INTEGRITY VERIFIED'}
+                  </div>
+                  <div style={{ fontSize: '0.85rem', color: 'var(--muted)', marginTop: '4px' }}>
+                    {isTampered
+                      ? 'This receipt has been tampered with. The hash no longer matches the blockchain record.'
+                      : 'All cryptographic proofs match. This data has not been altered since it was uploaded.'}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Provenance Fields */}
+            <div className="card">
+              <div className="section-title" style={{ marginBottom: '1.25rem' }}>Provenance Record</div>
+
+              <div className="field-row">
+                <div className="field-label">Receipt ID</div>
+                <div className="mono-field">{receipt.receiptId}</div>
+              </div>
+              <div className="field-row">
+                <div className="field-label">Shelby Object ID</div>
+                <div className="mono-field">{receipt.objectId || '—'}</div>
+              </div>
+              <div className="field-row">
+                <div className="field-label">SHA-256 Content Hash</div>
+                <div className="mono-field">{receipt.data?.sha256 || '—'}</div>
+              </div>
+              {receipt.signature && (
+                <div className="field-row">
+                  <div className="field-label">HMAC-SHA256 Signature</div>
+                  <div className="mono-field">{receipt.signature}</div>
+                </div>
+              )}
+              {receipt.shelby?.txHash && (
+                <div className="field-row">
+                  <div className="field-label">Aptos Blockchain Transaction</div>
+                  <div className="mono-field">
+                    <a
+                      href={`https://explorer.aptoslabs.com/txn/${receipt.shelby.txHash}?network=shelbynet`}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ color: 'var(--accent2)' }}
+                    >
+                      {receipt.shelby.txHash} ↗
+                    </a>
+                  </div>
+                </div>
+              )}
+              <div className="field-row">
+                <div className="field-label">Generated At</div>
+                <div className="mono-field">{formatTimestamp(receipt.accessedAt)}</div>
+              </div>
+              <div className="field-row">
+                <div className="field-label">Accessed By</div>
+                <div className="mono-field">ai-model-v1</div>
+              </div>
+              <div className="field-row">
+                <div className="field-label">Permissions</div>
+                <div className="mono-field">READ_ONLY</div>
+              </div>
+
+              <hr />
+              <div style={{ fontSize: '0.75rem', color: 'var(--muted)', lineHeight: 1.6 }}>
+                This receipt was generated by TraceAI. The SHA-256 hash and HMAC signature were computed at upload time and written to the Aptos blockchain via the Shelby network. Any modification to the underlying data will invalidate these proofs. This page is read-only and cannot be altered by the data provider.
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )
 }
 
-function App() {
+// ─── Navbar Component ───────────────────────────────────────────────────────
+function Navbar() {
+  return (
+    <nav className="navbar">
+      <Link to="/" className="navbar-brand">
+        <div className="logo-icon">T</div>
+        Trace<span>AI</span>
+      </Link>
+      <div className="nav-links">
+        <Link to="/" className="nav-link"><span>Upload</span> 📤</Link>
+        <Link to="/dashboard" className="nav-link"><span>Dashboard</span> 📊</Link>
+      </div>
+    </nav>
+  )
+}
+
+// ─── Global Styles ─────────────────────────────────────────────────────────
+function GlobalStyles() {
+  return (
+    <style dangerouslySetInnerHTML={{
+      __html: `
+        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+          --navy:       #1E3A5F;
+          --navy-dark:  #122440;
+          --navy-light: #2A4F80;
+          --accent:     #00C2FF;
+          --accent2:    #00FFB2;
+          --white:      #F0F6FF;
+          --muted:      #7B9DC4;
+          --card:       rgba(30, 58, 95, 0.6);
+          --border:     rgba(0, 194, 255, 0.2);
+          --danger:     #FF4C6A;
+          --success:    #00FFB2;
+          --warn:       #FFB800;
+          --font-main:  'Space Grotesk', sans-serif;
+          --font-mono:  'JetBrains Mono', monospace;
+        }
+
+        body {
+          background: var(--navy-dark);
+          color: var(--white);
+          font-family: var(--font-main);
+          min-height: 100vh;
+          background-image:
+            radial-gradient(ellipse 80% 50% at 20% -10%, rgba(0,194,255,0.08) 0%, transparent 60%),
+            radial-gradient(ellipse 60% 40% at 80% 110%, rgba(0,255,178,0.05) 0%, transparent 60%);
+        }
+
+        a { color: inherit; text-decoration: none; }
+
+        /* Navbar */
+        .navbar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 0 2rem;
+          height: 64px;
+          background: rgba(18, 36, 64, 0.85);
+          backdrop-filter: blur(12px);
+          border-bottom: 1px solid var(--border);
+          position: sticky;
+          top: 0;
+          z-index: 100;
+        }
+        .navbar-brand {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          font-size: 1.25rem;
+          font-weight: 700;
+          letter-spacing: -0.02em;
+        }
+        .navbar-brand .logo-icon {
+          width: 32px; height: 32px;
+          background: linear-gradient(135deg, var(--accent), var(--accent2));
+          border-radius: 8px;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 0.9rem;
+          color: var(--navy-dark);
+          font-weight: 800;
+        }
+        .navbar-brand span { color: var(--accent); }
+        .nav-links { display: flex; gap: 0.5rem; }
+        .nav-link {
+          padding: 6px 14px;
+          border-radius: 6px;
+          font-size: 0.875rem;
+          color: var(--muted);
+          transition: all 0.2s;
+          cursor: pointer;
+        }
+        .nav-link:hover, .nav-link.active { color: var(--white); background: rgba(0,194,255,0.1); }
+
+        /* Page Layout */
+        .page { max-width: 960px; margin: 0 auto; padding: 2.5rem 1.5rem; }
+        .page-title { font-size: 2rem; font-weight: 700; letter-spacing: -0.03em; margin-bottom: 0.5rem; }
+        .page-sub { color: var(--muted); font-size: 0.95rem; margin-bottom: 2rem; }
+
+        /* Cards */
+        .card {
+          background: var(--card);
+          border: 1px solid var(--border);
+          border-radius: 12px;
+          padding: 1.5rem;
+          backdrop-filter: blur(8px);
+        }
+        .card + .card { margin-top: 1rem; }
+
+        /* Buttons */
+        .btn {
+          display: inline-flex; align-items: center; gap: 8px;
+          padding: 10px 20px;
+          border-radius: 8px;
+          font-family: var(--font-main);
+          font-size: 0.875rem;
+          font-weight: 600;
+          cursor: pointer;
+          border: none;
+          transition: all 0.2s;
+        }
+        .btn-primary {
+          background: linear-gradient(135deg, var(--accent), #0080cc);
+          color: var(--navy-dark);
+        }
+        .btn-primary:hover { filter: brightness(1.1); transform: translateY(-1px); }
+        .btn-secondary {
+          background: rgba(0,194,255,0.1);
+          color: var(--accent);
+          border: 1px solid var(--border);
+        }
+        .btn-secondary:hover { background: rgba(0,194,255,0.2); }
+        .btn-danger {
+          background: rgba(255,76,106,0.15);
+          color: var(--danger);
+          border: 1px solid rgba(255,76,106,0.3);
+        }
+        .btn-danger:hover { background: rgba(255,76,106,0.25); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+        /* Upload Zone */
+        .upload-zone {
+          border: 2px dashed var(--border);
+          border-radius: 12px;
+          padding: 3rem 2rem;
+          text-align: center;
+          cursor: pointer;
+          transition: all 0.25s;
+          background: rgba(0,194,255,0.03);
+        }
+        .upload-zone:hover, .upload-zone.drag-over {
+          border-color: var(--accent);
+          background: rgba(0,194,255,0.07);
+        }
+        .upload-zone .upload-icon { font-size: 3rem; margin-bottom: 1rem; opacity: 0.6; }
+        .upload-zone h3 { font-size: 1.1rem; font-weight: 600; margin-bottom: 0.4rem; }
+        .upload-zone p { color: var(--muted); font-size: 0.875rem; }
+
+        /* Badges */
+        .badge {
+          display: inline-flex; align-items: center; gap: 5px;
+          padding: 4px 10px;
+          border-radius: 20px;
+          font-size: 0.75rem;
+          font-weight: 700;
+          letter-spacing: 0.05em;
+        }
+        .badge-verified {
+          background: rgba(0,255,178,0.12);
+          color: var(--success);
+          border: 1px solid rgba(0,255,178,0.3);
+        }
+        .badge-tampered {
+          background: rgba(255,76,106,0.12);
+          color: var(--danger);
+          border: 1px solid rgba(255,76,106,0.3);
+          animation: pulse-red 1.5s infinite;
+        }
+        .badge-pending {
+          background: rgba(255,184,0,0.12);
+          color: var(--warn);
+          border: 1px solid rgba(255,184,0,0.3);
+        }
+        @keyframes pulse-red {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(255,76,106,0); }
+          50%       { box-shadow: 0 0 0 6px rgba(255,76,106,0.15); }
+        }
+
+        /* Receipt Timeline Item */
+        .receipt-item {
+          display: flex; align-items: flex-start; gap: 1rem;
+          padding: 1.25rem;
+          border-radius: 10px;
+          border: 1px solid var(--border);
+          background: rgba(30,58,95,0.4);
+          transition: all 0.2s;
+          cursor: pointer;
+          margin-bottom: 0.75rem;
+        }
+        .receipt-item:hover { border-color: var(--accent); background: rgba(0,194,255,0.06); }
+        .receipt-item.tampered { border-color: rgba(255,76,106,0.4); }
+        .receipt-dot {
+          width: 10px; height: 10px;
+          border-radius: 50%;
+          background: var(--accent);
+          margin-top: 5px;
+          flex-shrink: 0;
+        }
+        .receipt-dot.tampered { background: var(--danger); }
+        .receipt-item-body { flex: 1; min-width: 0; }
+        .receipt-item-title {
+          font-weight: 600; font-size: 0.9rem;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .receipt-item-meta { color: var(--muted); font-size: 0.8rem; margin-top: 3px; }
+
+        /* Mono Field */
+        .mono-field {
+          font-family: var(--font-mono);
+          font-size: 0.75rem;
+          background: rgba(0,0,0,0.3);
+          border: 1px solid var(--border);
+          border-radius: 6px;
+          padding: 10px 12px;
+          word-break: break-all;
+          color: var(--accent2);
+          margin-top: 4px;
+        }
+
+        /* Field Row */
+        .field-row { margin-bottom: 1rem; }
+        .field-label { font-size: 0.75rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+
+        /* Section Header */
+        .section-header {
+          display: flex; align-items: center; justify-content: space-between;
+          margin-bottom: 1.25rem;
+        }
+        .section-title { font-size: 1.1rem; font-weight: 700; }
+
+        /* Spinner */
+        .spinner {
+          width: 18px; height: 18px;
+          border: 2px solid rgba(0,194,255,0.2);
+          border-top-color: var(--accent);
+          border-radius: 50%;
+          animation: spin 0.7s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Alert */
+        .alert {
+          padding: 12px 16px;
+          border-radius: 8px;
+          font-size: 0.875rem;
+          margin-bottom: 1rem;
+        }
+        .alert-success { background: rgba(0,255,178,0.1); border: 1px solid rgba(0,255,178,0.3); color: var(--success); }
+        .alert-error   { background: rgba(255,76,106,0.1); border: 1px solid rgba(255,76,106,0.3); color: var(--danger); }
+        .alert-info    { background: rgba(0,194,255,0.1);  border: 1px solid rgba(0,194,255,0.3);  color: var(--accent); }
+
+        /* Regulator Banner */
+        .regulator-banner {
+          background: linear-gradient(135deg, rgba(0,194,255,0.12), rgba(0,255,178,0.06));
+          border: 1px solid var(--border);
+          border-radius: 12px;
+          padding: 1.25rem 1.5rem;
+          display: flex; align-items: center; gap: 1rem;
+          margin-bottom: 2rem;
+        }
+        .regulator-banner .shield { font-size: 2rem; }
+        .regulator-banner h2 { font-size: 1rem; font-weight: 700; margin-bottom: 2px; }
+        .regulator-banner p  { font-size: 0.8rem; color: var(--muted); }
+
+        /* Empty State */
+        .empty-state { text-align: center; padding: 4rem 2rem; color: var(--muted); }
+        .empty-state .icon { font-size: 3rem; margin-bottom: 1rem; opacity: 0.4; }
+        .empty-state p { font-size: 0.9rem; }
+
+        /* Divider */
+        hr { border: none; border-top: 1px solid var(--border); margin: 1.5rem 0; }
+
+        /* Responsive */
+        @media (max-width: 640px) {
+          .page { padding: 1.5rem 1rem; }
+          .page-title { font-size: 1.5rem; }
+          .navbar { padding: 0 1rem; }
+          .nav-links .nav-link span { display: none; }
+        }
+      `
+    }} />
+  )
+}
+
+// ─── Root App Component ─────────────────────────────────────────────────────
+export default function App() {
   return (
     <Router>
+      <GlobalStyles />
       <Routes>
-        <Route path="/" element={<AppContent />} />
-        <Route path="/receipt/:receiptId" element={<ReceiptDetailPage />} />
-        <Route path="/regulator/:receiptId" element={<RegulatorView />} />
+        <Route path="/" element={<UploadPage />} />
+        <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/receipt/:id" element={<ReceiptPage />} />
+        <Route path="/regulator/:id" element={<RegulatorPage />} />
       </Routes>
     </Router>
   )
 }
-
-export default App
