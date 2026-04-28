@@ -78,9 +78,6 @@ RECEIPT_HMAC_SECRET=your_secret
 ```
 
 
-
-##  Built for the Shelby Hackathon
-
 TraceAI is the compliance layer built on top of Shelby — making AI trustworthy, auditable, and provable for any industry.
 
 
